@@ -7,10 +7,8 @@ from http import HTTPStatus
 import requests
 
 from configs import log_configured
-from exceptions import APIException, ServiceException
 from dotenv import load_dotenv
 from telegram import Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
 
 
 logger = log_configured.getLogger(__name__)
@@ -24,7 +22,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 
-RETRY_PERIOD = 60  # Retry_period = 600
+RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 PAYLOAD = {'from_date': 0}
@@ -36,23 +34,17 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.',
 }
 
-prev_status = {
-    'homework_name': None,
-    'status': None,
-}
-
 
 def check_tokens() -> None:
     """Проверяем наличие токена."""
     for token in (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID):
         if token is None:
-            # logger.error('Проблема с доступом к токенам.')
-            raise APIException('Ошибка доступа к токенам.')
+            logger.error('Ошибка доступа к токенам.')
 
 
-def get_api_answer() -> dict:
+def get_api_answer(timestamp) -> dict:
     """Получаем ответ от API сервиса Практикум.Домашка."""
-    # PAYLOAD['from_date'] = timestamp
+    PAYLOAD['from_date'] = timestamp
     answer_recieved = requests.get(
         ENDPOINT,
         headers=HEADERS,
@@ -63,14 +55,10 @@ def get_api_answer() -> dict:
             answer = json.loads(answer_recieved.text)
             return answer
         except json.JSONDecodeError as e:
-            # logger.error(f'Ошибка при декодировании JSON: {e}')
-            raise ServiceException(f'Ошибка декодирования JSON: {e}')
+            logger.error(f'Ошибка декодирования JSON: {e}.')
     else:
-        # logger.error(
-        #    f'Ошибочный ответ от сервиса: {answer_recieved.status_code}'
-        # )
-        raise ServiceException(
-            f'Ошибка ответа от {ENDPOINT}: {answer_recieved.status_code}'
+        logger.error(
+            f'Ошибочный ответ от {ENDPOINT}: {answer_recieved.status_code}.'
         )
 
 
@@ -85,40 +73,30 @@ def check_response(response) -> None:
         'status': str,
     }
 
-    def validate_format(data, expected_format, logger):
+    def validate_format(data, expected_format):
         for key, expected_type in expected_format.items():
             if key not in data:
-                raise KeyError(f'Error: {key} is missing in the dictionary.')
+                raise KeyError(f'{key} не найден в ответе API.')
             if not isinstance(data[key], expected_type):
                 raise TypeError(
-                    f'Error: {key} should be of type {expected_type.__name__}.'
+                    f'{key} не ожидаемого {expected_type.__name__} типа.'
                 )
     try:
-        validate_format(response, expected_format1, logger)
+        validate_format(response, expected_format1)
         homeworks = response.get('homeworks', [])
         if homeworks and isinstance(homeworks[0], dict):
             for homework in homeworks:
-                validate_format(homework, expected_format2, logger)
+                validate_format(homework, expected_format2)
     except (KeyError, TypeError) as e:
-        error_message = f'Ошибка API формата: {e}'
-        # logger.error(error_message)
-        raise ServiceException(error_message)
+        logger.error(f'Ошибка API формата: {e}')
 
 
 def parse_status(homework) -> str:
     """Возвращаем статус домашней работы по инфо о ней."""
     try:
-        homework_name, status = homework.get('lesson_name'), homework.get('status')
-        if homework_name != prev_status['homework_name']:
-            prev_status['homework_name'], prev_status['status'] = homework_name, status
-        else:
-            prev_status['status'] = status
-            return 'same here'
-        return HOMEWORK_VERDICTS.get(status)
+        return HOMEWORK_VERDICTS.get(homework.get('status'))
     except KeyError as e:
-        error_message = f'Ошибка {e} в функции parse_status'
-        # logger.error(error_message)
-        raise ServiceException(error_message)
+        logger.error(f'Ошибка {e} при поиске вердикта в словаре.')
 
 
 def send_message(bot, message) -> None:
@@ -126,39 +104,19 @@ def send_message(bot, message) -> None:
     bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
 
-def start_command(update, context: CallbackContext):
-    """Логика комманды /start."""
-    chat = update.effective_chat
-    if chat is not None:
-        message: str = (
-            f'Привет, {chat.first_name}!\n'
-            'Я тут, чтобы проверить статус твоей последней домашки '
-            'и держать тебя в курсе, если будут какие-то апдейты.\n'
-            '*ушёл проверять статус*\n'
-        )
-        send_message(context.bot, message)
-        api_answer = get_api_answer()
-        status = parse_status(api_answer.get('homeworks')[0])
-        send_message(context.bot, status)
-    else:
-        # logger.error('Ошибка доступа к чату при запросе /start.')
-        raise ServiceException('Ошибка доступа к чату при запросе /start.')
-
-
-def help_command(update, context: CallbackContext) -> None:
-    """Логика команды /help."""
-    if update.effective_chat is not None:
-        message: str = (
-            'Этот бот не поможет выполнить домашку, но пришлёт статус '
-            'последней отправленной работы и обязательно напишет, '
-            'если он изменится. Stay tuned!\n\n'
-            '* если кажется, что что-то идет не так, попробуй '
-            'перезапустить бота /start'
-        )
-        send_message(context.bot, message)
-    else:
-        # logger.error('Ошибка доступа к чату при запросе /help.')
-        raise ServiceException('Ошибка доступа к чату при запросе /help.')
+def get_new_verdict(timestamp):
+    """Получение нового вердикта на момент timestamp."""
+    try:
+        verdict = None
+        new_timestamp = int(time.time())
+        api_answer = get_api_answer(timestamp)
+        check_response(api_answer)
+        homeworks = api_answer.get('homeworks')
+        if homeworks != []:
+            verdict = parse_status(homeworks[0])
+        return new_timestamp, verdict
+    except Exception as e:
+        logger.error(f'Сбой при получении или обработке ответа от API: {e}')
 
 
 def main():
@@ -166,23 +124,20 @@ def main():
     check_tokens()
     bot = Bot(token=TELEGRAM_TOKEN)
 
-    updater = Updater(bot=bot, use_context=True)
-    updater.dispatcher.add_handler(CommandHandler('start', start_command))
-    updater.dispatcher.add_handler(CommandHandler('help', help_command))
-
-    updater.start_polling()
-
-    timestamp = int(time.time())
+    timestamp = 0
+    prev_verdict = ''
 
     while True:
         try:
-            # timestamp = int(time.time())
-            api_answer = get_api_answer()
-            status = parse_status(api_answer.get('homeworks')[0])
-            # if status != prev_status:send_message(bot, status) prev_status = status
-            send_message(bot, status)
+            timestamp, new_verdict = get_new_verdict(timestamp)
+            if new_verdict is not None and new_verdict != prev_verdict:
+                send_message(bot, new_verdict)
+                prev_verdict = new_verdict
+            else:
+                send_message(bot, 'same_here')
+            print(timestamp)
         except Exception as e:
-            print(f'Сбой в работе программы: {e}')
+            logger.error(f'Сбой в работе бота: {e}')
 
         time.sleep(RETRY_PERIOD)
 
