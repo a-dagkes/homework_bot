@@ -1,11 +1,11 @@
 """Настройка логирования."""
 import logging as log_configured
+import sys
 
 log_configured.basicConfig(
-    level=log_configured.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=log_configured.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        log_configured.FileHandler('bot.log'),
-        log_configured.StreamHandler(),
+        log_configured.StreamHandler(sys.stdout),
     ],
 )
