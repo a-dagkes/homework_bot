@@ -9,8 +9,8 @@ import requests
 
 import logging
 from dotenv import load_dotenv
-from telegram import Bot
-from exceptions import TokenError, APIException
+from telegram import Bot, TelegramError
+from exceptions import APIException
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -57,10 +57,11 @@ def check_tokens() -> None:
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
     }.items():
         if token_value is None:
-            raise TokenError(token_name)
+            logger.critical(f'Ошибка доступа к токену {token_name}.')
+            sys.exit('Программа принудительно остановлена.')
 
 
-def get_api_answer(timestamp) -> dict:
+def get_api_answer(timestamp: int) -> dict:
     """Получаем ответ от API сервиса Практикум.Домашка."""
     PAYLOAD['from_date'] = timestamp
     try:
@@ -109,9 +110,9 @@ def check_response(response) -> None:
                     raise KeyError('не найден ключ lessons_name.')
                 if 'status' not in homework:
                     raise KeyError('не найден ключ status.')
-                if not isinstance(homeworks['lesson_name'], str):
+                if not isinstance(homework['lesson_name'], str):
                     raise TypeError('lessons_name не ожидаемого str типа.')
-                if not isinstance(homeworks['status'], str):
+                if not isinstance(homework['status'], str):
                     raise TypeError('status не ожидаемого str типа.')
         return homeworks
     except (KeyError, TypeError) as e:
@@ -150,44 +151,33 @@ def parse_status(homework) -> str:
         )
 
 
-def send_message(bot, message) -> None:
+def send_message(bot: Bot, message: str) -> None:
     """Отправляем сообщение в чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logger.debug('Сообщение успешно отправлено.')
-    except Exception as e:
-        logger.error(
-            f'Что-то пошло не так при отправке сообщения: {e}.'
-        )
+    except TelegramError as e:
+        logger.error(f'Ошибка при отправке сообщения: {e}.')
+    else:
+        logger.debug(f'Сообщение успешно отправлено: {message}.')
 
 
 def main():
     """Основная логика работы бота."""
-    try:
-        check_tokens()
-        logger.debug('Токены проверены.')
-        bot = Bot(token=TELEGRAM_TOKEN)
-        logger.debug('Бот активирован.')
-    except TokenError as e:
-        logger.critical(str(e))
-        sys.exit('Программа принудительно остановлена.')
-    except Exception as e:
-        logger.critical(f'Ошибка при запуске бота: {e}.')
-        sys.exit('Программа принудительно остановлена.')
+    check_tokens()
+    bot = Bot(token=TELEGRAM_TOKEN)
 
     timestamp = 0
     prev_verdict = ''
 
     while True:
         try:
-            new_timestamp = int(time.time())
             new_verdict = None
 
             api_answer = get_api_answer(timestamp)
             logger.debug(f'Получен ответ от API на момент {timestamp}.')
-            homeworks = check_response(api_answer).get('homeworks')
+            check_response(api_answer)
             logger.debug('Проверка валидности формата ответа API пройдена.')
-            # homeworks = api_answer.get('homeworks')
+            homeworks = api_answer.get('homeworks')
             if homeworks:
                 logger.debug('Получены обновления.')
                 new_verdict = parse_status(homeworks[0])
@@ -197,17 +187,16 @@ def main():
                     logger.debug('Полученный вердикт отправлен.')
                     prev_verdict = new_verdict
                     logger.debug('Новый вердикт перезаписан вместо старого.')
-                    timestamp = new_timestamp
+                    timestamp = api_answer.get('current_date', timestamp)
                     logger.debug('Обновлена точка отсчета для обновлений.')
                 else:
                     logger.warning('Новый вердикт идентичен предыдущему.')
             else:
                 logger.debug('Обновлений нет.')
         except APIException as e:
-            logger.error(e)
+            logger.error(str(e))
         except Exception as e:
             logger.error(f'Неожиданный сбой в работе бота: {e}')
-
         finally:
             time.sleep(RETRY_PERIOD)
             logger.debug(f'Бот уснул на {RETRY_PERIOD} секунд.')
