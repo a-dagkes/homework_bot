@@ -83,8 +83,10 @@ InvalidResponse = namedtuple('InvalidResponse', ('data', 'defected_key'))
 class MockResponseGET:
     CALLED_LOG_MSG = 'Request is sent'
 
-    def __init__(self, *args, random_timestamp=None,
-                 http_status=HTTPStatus.OK, data=None, **kwargs):
+    def __init__(
+            self, *args, random_timestamp=None, http_status=HTTPStatus.OK,
+            data=None, **kwargs
+    ):
         self.random_timestamp = random_timestamp
         self.status_code = http_status
         self.reason = ''
@@ -93,7 +95,7 @@ class MockResponseGET:
             'homeworks': [],
             'current_date': self.random_timestamp
         }
-        self.data = default_data if data is None else data
+        self.data = data if data is not None else default_data
         logging.warn(MockResponseGET.CALLED_LOG_MSG)
 
     def json(self):
@@ -105,7 +107,7 @@ class MockResponseGET:
 
 
 class MockTelegramBot:
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         self._is_message_sent = False
 
     def send_message(self, chat_id=None, text=None, **kwargs):

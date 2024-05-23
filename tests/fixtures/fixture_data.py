@@ -36,8 +36,12 @@ def data_with_new_hw_status(random_timestamp):
     return {
         'homeworks': [
             {
-                'homework_name': 'hw123',
-                'status': 'approved'
+                'id': 777777777,
+                'homework_name': 'hw123.zip',
+                'status': 'approved',
+                'reviewer_comment': 'Принято!',
+                'date_updated': '2021-04-11T10:31:09Z',
+                'lesson_name': 'Проект спринта: Деплой бота'
             }
         ],
         'current_date': random_timestamp
