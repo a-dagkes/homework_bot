@@ -65,24 +65,20 @@ def get_api_answer(timestamp: int) -> dict:
     """Получаем ответ от API сервиса Практикум.Домашка."""
     PAYLOAD['from_date'] = timestamp
     try:
-        answer_recieved = requests.get(
+        response = requests.get(
             ENDPOINT,
             headers=HEADERS,
             params=PAYLOAD,
         )
-        if answer_recieved.status_code != HTTPStatus.OK:
+        if response.status_code != HTTPStatus.OK:
             raise APIException(
-                message=f'Ошибка ответа от API: {answer_recieved.status_code}',
+                message=f'Ошибка ответа от API: {response.status_code}',
             )
-    except Exception as e:
+        return response.json()
+    except requests.RequestException as e:
         raise APIException(
             message=f'Нет доступа к API: {e}.',
         )
-
-    try:
-        answer = answer_recieved.json()
-        logger.debug(f'TYPE OF THE RESPONSE: {type(answer)}')
-        return answer
     except json.JSONDecodeError as e:
         raise APIException(
             message=f'Ошибка декодирования JSON: {e}',
@@ -95,7 +91,7 @@ def check_response(response) -> None:
         if not isinstance(response, dict):
             raise TypeError(
                 f'получен объект {type(response).__name__} типа '
-                f'вместо ожидаемого типа dict.'
+                'вместо ожидаемого типа dict.'
             )
         if 'homeworks' not in response:
             raise KeyError('ключ homeworks не найден.')
@@ -105,11 +101,7 @@ def check_response(response) -> None:
             raise KeyError('ключ current_date не найден.')
         if not isinstance(response.get('current_date'), int):
             raise TypeError('значение по ключу current_date не типа int.')
-        homeworks = response.get('homeworks')
-        if not isinstance(homeworks, list):
-            raise TypeError('значение по ключу homeworks не типа list.')
-
-        return homeworks
+        return response.get('homeworks')
     except (KeyError, TypeError) as e:
         raise APIException(
             message=f'Ошибка при проверке формата ответа API: {e}',
@@ -172,7 +164,6 @@ def main():
     while True:
         try:
             new_verdict = None
-
             api_answer = get_api_answer(timestamp)
             logger.debug(f'Получен ответ от API на момент {timestamp}.')
             check_response(api_answer)
@@ -194,11 +185,13 @@ def main():
             else:
                 logger.debug('Обновлений нет.')
         except APIException as e:
-            logger.error(str(e))
-            # отправить инфо об ошибке в телеграм?
+            logger.error(e)
             continue
         except Exception as e:
             logger.error(f'Неожиданный сбой в работе бота: {e}')
+            check_tokens()
+            bot = Bot(token=TELEGRAM_TOKEN)
+            continue
         finally:
             time.sleep(RETRY_PERIOD)
             logger.debug(f'Бот уснул на {RETRY_PERIOD} секунд.')
