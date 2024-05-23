@@ -69,7 +69,6 @@ def get_api_answer(timestamp) -> dict:
             headers=HEADERS,
             params=PAYLOAD,
         )
-        # answer_recieved.raise_for_status()
         if answer_recieved.status_code != HTTPStatus.OK:
             raise APIException(
                 message=f'Ошибка ответа от API: {answer_recieved.status_code}',
@@ -80,7 +79,7 @@ def get_api_answer(timestamp) -> dict:
         )
 
     try:
-        answer = answer_recieved.json()  # json.loads(answer_recieved.text)
+        answer = answer_recieved.json()
         return answer
     except json.JSONDecodeError as e:
         raise APIException(
@@ -117,51 +116,8 @@ def check_response(response) -> None:
         return homeworks
     except (KeyError, TypeError) as e:
         raise APIException(
-            message=f'Ошибка при проверке формата ответа API: {e}.',
+            message=f'Ошибка при проверке формата ответа API: {str(e)}.',
         )
-
-
-'''
-    expected_format_for_response = {
-        'homeworks': list,
-        'current_date': int,
-    }
-    expected_format_for_homework = {
-        'lesson_name': str,
-        'status': str,
-    }
-
-    def validate_format(data, expected_format):
-        if not isinstance(expected_format, dict):
-            if not isinstance(data, expected_format):
-                raise TypeError(
-                    f'В ответе API получен объект {type(data).__name__} типа '
-                    f'вместо ожидаемого {expected_format.__name__} типа.'
-                )
-        else:
-            for key, expected_type in expected_format.items():
-                if key not in data:
-                    raise KeyError(f'Ключ {key} не найден.')
-                if not isinstance(data[key], expected_type):
-                    raise TypeError(
-                        f'Ключ {key} не ожидаемого '
-                        '{expected_type.__name__} типа.'
-                    )
-
-    try:
-        validate_format(response, dict)
-        validate_format(response, expected_format_for_response)
-        homeworks = response.get('homeworks')
-        validate_format(homeworks, list)
-        if homeworks:
-            for homework in homeworks:
-                validate_format(homework, expected_format_for_homework)
-        return response
-    except (KeyError, TypeError) as e:
-        raise APIException(
-            message=f'Ошибка ключей в ответе API: {e}',
-        )
-'''
 
 
 def parse_status(homework) -> str:
