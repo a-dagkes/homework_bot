@@ -10,6 +10,7 @@ import requests
 import logging
 from dotenv import load_dotenv
 from telegram import Bot
+from exceptions import TokenError, APIException
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 logging.getLogger('requests').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('send_message').setLevel(logging.WARNING)
+logging.getLogger('telegram.bot').setLevel(logging.WARNING)
 
 locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
@@ -35,7 +36,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 
-RETRY_PERIOD = 600
+RETRY_PERIOD = 10  # gjf 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 PAYLOAD = {'from_date': 0}
@@ -56,8 +57,7 @@ def check_tokens() -> None:
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
     }.items():
         if token_value is None:
-            logger.critical(f'Ошибка доступа к токену {token_name}.')
-            sys.exit('Программа принудительно остановлена.')
+            raise TokenError(token_name)
 
 
 def get_api_answer(timestamp) -> dict:
@@ -69,77 +69,127 @@ def get_api_answer(timestamp) -> dict:
             headers=HEADERS,
             params=PAYLOAD,
         )
-        if answer_recieved.status_code == HTTPStatus.OK:
-            try:
-                answer = json.loads(answer_recieved.text)
-                return answer
-            except json.JSONDecodeError as e:
-                logger.error(f'Ошибка декодирования JSON: {e}.')
-                return {}
-        else:
-            logger.error(
-                f'Недоступность {ENDPOINT}: {answer_recieved.status_code}.'
+        # answer_recieved.raise_for_status()
+        if answer_recieved.status_code != HTTPStatus.OK:
+            raise APIException(
+                message=f'Ошибка ответа от API: {answer_recieved.status_code}',
             )
-            return {}
-    except requests.RequestException as e:
-        logger.error(f'Ошибка при выполнении запроса к API: {e}.')
+    except Exception as e:
+        raise APIException(
+            message=f'Нет доступа к API: {e}.',
+        )
+
+    try:
+        answer = answer_recieved.json()  # json.loads(answer_recieved.text)
+        return answer
+    except json.JSONDecodeError as e:
+        raise APIException(
+            message=f'Ошибка декодирования JSON: {str(e)}',
+        )
 
 
 def check_response(response) -> None:
     """Проверяем валидность формата ответа API."""
-    if not response:
-        raise KeyError('В check_responce не передан ответ API.')
-
-    expected_format1 = {
+    try:
+        if not isinstance(response, dict):
+            raise TypeError(
+                f'получен объект {type(response).__name__} типа '
+                f'вместо ожидаемого типа dict.'
+            )
+        if 'homeworks' not in response:
+            raise KeyError('ключ homeworks не найден.')
+        homeworks = response.get('homeworks')
+        if not isinstance(homeworks, list):
+            raise TypeError(
+                f'получен объект {type(response).__name__} типа '
+                f'вместо ожидаемого типа list.'
+            )
+        if homeworks:
+            for homework in homeworks:
+                if 'lesson_name' not in homework:
+                    raise KeyError('не найден ключ lessons_name.')
+                if 'status' not in homework:
+                    raise KeyError('не найден ключ status.')
+                if not isinstance(homeworks['lesson_name'], str):
+                    raise TypeError('lessons_name не ожидаемого str типа.')
+                if not isinstance(homeworks['status'], str):
+                    raise TypeError('status не ожидаемого str типа.')
+        return homeworks
+    except (KeyError, TypeError) as e:
+        raise APIException(
+            message=f'Ошибка при проверке формата ответа API: {e}.',
+        )
+'''
+    expected_format_for_response = {
         'homeworks': list,
         'current_date': int,
     }
-    expected_format2 = {
+    expected_format_for_homework = {
         'lesson_name': str,
         'status': str,
     }
 
     def validate_format(data, expected_format):
-        if not isinstance(data, dict):
-            raise TypeError(
-                'В функцию validate_format попал объект не <dict> типа.'
-            )
-        for key, expected_type in expected_format.items():
-            if key not in data:
-                raise KeyError(f'Ключ {key} не найден.')
-            if not isinstance(data[key], expected_type):
+        if not isinstance(expected_format, dict):
+            if not isinstance(data, expected_format):
                 raise TypeError(
-                    f'Ключ {key} не ожидаемого {expected_type.__name__} типа.'
+                    f'В ответе API получен объект {type(data).__name__} типа '
+                    f'вместо ожидаемого {expected_format.__name__} типа.'
                 )
+        else:
+            for key, expected_type in expected_format.items():
+                if key not in data:
+                    raise KeyError(f'Ключ {key} не найден.')
+                if not isinstance(data[key], expected_type):
+                    raise TypeError(
+                        f'Ключ {key} не ожидаемого '
+                        '{expected_type.__name__} типа.'
+                    )
+
     try:
-        if not isinstance(response, dict):
-            raise TypeError('Полученный ответ API не <dict> типа.')
-        validate_format(response, expected_format1)
+        validate_format(response, dict)
+        validate_format(response, expected_format_for_response)
         homeworks = response.get('homeworks')
-        if not isinstance(homeworks, list):
-            raise TypeError(
-                'В ответе API под ключом homeworks не <list> типа.'
-            )
-        for homework in homeworks:
-            validate_format(homework, expected_format2)
+        validate_format(homeworks, list)
+        if homeworks:
+            for homework in homeworks:
+                validate_format(homework, expected_format_for_homework)
         return response
     except (KeyError, TypeError) as e:
-        logger.error(f'Ошибка ключей в ответе API: {e}')
-        return {}
+        raise APIException(
+            message=f'Ошибка ключей в ответе API: {e}',
+        )
+'''
 
 
 def parse_status(homework) -> str:
-    """Возвращаем статус домашней работы по инфо о ней."""
+    """Возвращаем статус домашней работы и инфо о ней."""
     try:
         homework_name = homework.get('lesson_name')
-        status = homework.get('status')    
+        if homework_name is None:
+            raise APIException(
+                message='Инфо домашней работы не содержит ее имени.',
+            )
+
+        status = homework.get('status')
+        if status is None:
+            raise APIException(
+                message='Не получен статус домашней работы.',
+            )
+        if status not in HOMEWORK_VERDICTS:
+            raise APIException(
+                message=f'Неизвестный статус домашней работы: {status}.',
+            )
+
         message = (
-            f'Изменился статус проверки работы {homework_name}. '
+            f'Изменился статус проверки работы "{homework_name}". '
             f'{HOMEWORK_VERDICTS.get(status)}'
         )
         return message
-    except KeyError:
-        logger.error('Неизвестный статус или имя домашней работы.')
+    except Exception as e:
+        raise APIException(
+            message=f'Ошибка при получении инфо о домашней работе: {e}.',
+        )
 
 
 def send_message(bot, message) -> None:
@@ -153,47 +203,56 @@ def send_message(bot, message) -> None:
         )
 
 
-def get_new_verdict(timestamp, prev_verdict):
-    """Проверка обновлений на момент timestamp."""
-    try:
-        new_timestamp = int(time.time())
-        api_answer = check_response(get_api_answer(timestamp))
-        if api_answer == {}:
-            return timestamp, None
-        homeworks = api_answer.get('homeworks')
-        if homeworks != []:
-            new_verdict = parse_status(homeworks[0])
-            if new_verdict == prev_verdict:
-                logger.warning('Новый вердикт идентичен предыдущему.')
-            return new_timestamp, new_verdict
-        logger.debug('Обновлений нет.')
-        return new_timestamp, None
-    except Exception as e:
-        logger.error(f'Сбой при получении или обработке ответа от API: {e}')
-        return timestamp, None
-
-
 def main():
     """Основная логика работы бота."""
-    check_tokens()
-    bot = Bot(token=TELEGRAM_TOKEN)
+    try:
+        check_tokens()
+        logger.debug('Токены проверены.')
+        bot = Bot(token=TELEGRAM_TOKEN)
+        logger.debug('Бот активирован.')
+    except TokenError as e:
+        logger.critical(str(e))
+        sys.exit('Программа принудительно остановлена.')
+    except Exception as e:
+        logger.critical(f'Ошибка при запуске бота: {e}.')
+        sys.exit('Программа принудительно остановлена.')
 
     timestamp = 0
     prev_verdict = ''
 
     while True:
         try:
-            timestamp, new_verdict = get_new_verdict(timestamp, prev_verdict)
-            logger.debug('Обновлена временная точка отсчета timestamp.')
-            if new_verdict is not None:
-                send_message(bot, new_verdict)
-                logger.debug('Полученный вердикт отправлен.')
-                prev_verdict = new_verdict
-                logger.debug('Новый вердикт перезаписан вместо старого.')
-        except Exception as e:
-            logger.error(f'Сбой в работе бота: {e}')
+            new_timestamp = int(time.time())
+            new_verdict = None
 
-        time.sleep(RETRY_PERIOD)
+            api_answer = get_api_answer(timestamp)
+            logger.debug(f'Получен ответ от API на момент {timestamp}.')
+            homeworks = check_response(api_answer).get('homeworks')
+            logger.debug('Проверка валидности формата ответа API пройдена.')
+            # homeworks = api_answer.get('homeworks')
+            if homeworks:
+                logger.debug('Получены обновления.')
+                new_verdict = parse_status(homeworks[0])
+                logger.debug('Обновления распарсены.')
+                if new_verdict != prev_verdict:
+                    send_message(bot, new_verdict)
+                    logger.debug('Полученный вердикт отправлен.')
+                    prev_verdict = new_verdict
+                    logger.debug('Новый вердикт перезаписан вместо старого.')
+                    timestamp = new_timestamp
+                    logger.debug('Обновлена точка отсчета для обновлений.')
+                else:
+                    logger.warning('Новый вердикт идентичен предыдущему.')
+            else:
+                logger.debug('Обновлений нет.')
+        except APIException as e:
+            logger.error(e)
+        except Exception as e:
+            logger.error(f'Неожиданный сбой в работе бота: {e}')
+
+        finally:
+            time.sleep(RETRY_PERIOD)
+            logger.debug(f'Бот уснул на {RETRY_PERIOD} секунд.')
 
 
 if __name__ == '__main__':
