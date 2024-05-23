@@ -119,11 +119,18 @@ def check_response(response) -> None:
 def parse_status(homework) -> str:
     """Возвращаем статус домашней работы и инфо о ней."""
     try:
+        '''
         if 'lesson_name' not in homework:
             raise KeyError('не найден ключ lessons_name.')
         homework_name = homework.get('lesson_name')
         if not isinstance(homework_name, str):
             raise TypeError('lessons_name не ожидаемого str типа.')
+        '''
+        if 'homework_name' not in homework:
+            raise KeyError('не найден ключ homework_name.')
+        homework_name = homework.get('homework_name')
+        if not isinstance(homework_name, str):
+            raise TypeError('homework_name не ожидаемого str типа.')
         if 'status' not in homework:
             raise KeyError('не найден ключ status.')
         status = homework.get('status')
