@@ -36,7 +36,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 
-RETRY_PERIOD = 10  # gjf 600
+RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 PAYLOAD = {'from_date': 0}
@@ -119,6 +119,8 @@ def check_response(response) -> None:
         raise APIException(
             message=f'Ошибка при проверке формата ответа API: {e}.',
         )
+
+
 '''
     expected_format_for_response = {
         'homeworks': list,
