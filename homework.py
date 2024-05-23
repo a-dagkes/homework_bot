@@ -81,10 +81,11 @@ def get_api_answer(timestamp: int) -> dict:
 
     try:
         answer = answer_recieved.json()
+        logger.debug(f'TYPE OF THE RESPONSE: {type(answer)}')
         return answer
     except json.JSONDecodeError as e:
         raise APIException(
-            message=f'Ошибка декодирования JSON: {str(e)}',
+            message=f'Ошибка декодирования JSON: {e}',
         )
 
 
@@ -98,54 +99,46 @@ def check_response(response) -> None:
             )
         if 'homeworks' not in response:
             raise KeyError('ключ homeworks не найден.')
+        if not isinstance(response.get('homeworks'), list):
+            raise TypeError('значение по ключу homeworks не типа list.')
+        if 'current_date' not in response:
+            raise KeyError('ключ current_date не найден.')
+        if not isinstance(response.get('current_date'), int):
+            raise TypeError('значение по ключу current_date не типа int.')
         homeworks = response.get('homeworks')
         if not isinstance(homeworks, list):
-            raise TypeError(
-                f'получен объект {type(response).__name__} типа '
-                f'вместо ожидаемого типа list.'
-            )
-        if homeworks:
-            for homework in homeworks:
-                if 'lesson_name' not in homework:
-                    raise KeyError('не найден ключ lessons_name.')
-                if 'status' not in homework:
-                    raise KeyError('не найден ключ status.')
-                if not isinstance(homework['lesson_name'], str):
-                    raise TypeError('lessons_name не ожидаемого str типа.')
-                if not isinstance(homework['status'], str):
-                    raise TypeError('status не ожидаемого str типа.')
+            raise TypeError('значение по ключу homeworks не типа list.')
+
         return homeworks
     except (KeyError, TypeError) as e:
         raise APIException(
-            message=f'Ошибка при проверке формата ответа API: {str(e)}.',
+            message=f'Ошибка при проверке формата ответа API: {e}',
         )
 
 
 def parse_status(homework) -> str:
     """Возвращаем статус домашней работы и инфо о ней."""
     try:
+        if 'lesson_name' not in homework:
+            raise KeyError('не найден ключ lessons_name.')
         homework_name = homework.get('lesson_name')
-        if homework_name is None:
-            raise APIException(
-                message='Инфо домашней работы не содержит ее имени.',
-            )
-
+        if not isinstance(homework_name, str):
+            raise TypeError('lessons_name не ожидаемого str типа.')
+        if 'status' not in homework:
+            raise KeyError('не найден ключ status.')
         status = homework.get('status')
-        if status is None:
-            raise APIException(
-                message='Не получен статус домашней работы.',
-            )
+        if not isinstance(status, str):
+            raise TypeError('status не ожидаемого str типа.')
         if status not in HOMEWORK_VERDICTS:
-            raise APIException(
-                message=f'Неизвестный статус домашней работы: {status}.',
-            )
+            raise KeyError(f'Неизвестный статус домашней работы: {status}.')
 
         message = (
             f'Изменился статус проверки работы "{homework_name}". '
             f'{HOMEWORK_VERDICTS.get(status)}'
         )
         return message
-    except Exception as e:
+
+    except (KeyError, TypeError) as e:
         raise APIException(
             message=f'Ошибка при получении инфо о домашней работе: {e}.',
         )
@@ -195,6 +188,8 @@ def main():
                 logger.debug('Обновлений нет.')
         except APIException as e:
             logger.error(str(e))
+            # отправить инфо об ошибке в телеграм?
+            continue
         except Exception as e:
             logger.error(f'Неожиданный сбой в работе бота: {e}')
         finally:

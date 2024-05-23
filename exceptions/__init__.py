@@ -1,4 +1,4 @@
 """Классы ошибок при работе бота."""
-from .errors import TokenError, APIException
+from .errors import APIException
 
-__all__ = ('TokenError', 'APIException')
+__all__ = ('APIException',)
