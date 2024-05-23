@@ -6,7 +6,7 @@ import time
 from http import HTTPStatus
 
 import requests
-
+import telebot
 import logging
 from dotenv import load_dotenv
 from telegram import Bot, TelegramError
@@ -156,7 +156,8 @@ def send_message(bot: Bot, message: str) -> None:
 def main():
     """Основная логика работы бота."""
     check_tokens()
-    bot = Bot(token=TELEGRAM_TOKEN)
+    #bot = Bot(token=TELEGRAM_TOKEN)
+    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
 
     timestamp = 0
     prev_verdict = ''
@@ -190,7 +191,7 @@ def main():
         except Exception as e:
             logger.error(f'Неожиданный сбой в работе бота: {e}')
             check_tokens()
-            bot = Bot(token=TELEGRAM_TOKEN)
+            #bot = Bot(token=TELEGRAM_TOKEN)
             continue
         finally:
             time.sleep(RETRY_PERIOD)
