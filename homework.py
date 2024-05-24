@@ -85,9 +85,11 @@ def get_api_answer(timestamp: int) -> dict:
         )
 
 
-def check_response(response) -> None:
+def check_response(response: dict) -> None:
     """Проверяем валидность формата ответа API."""
     try:
+        if not response:
+            raise KeyError('не получен объект response.')
         if not isinstance(response, dict):
             raise TypeError(
                 f'получен объект {type(response).__name__} типа '
@@ -191,7 +193,11 @@ def main():
         except Exception as e:
             logger.error(f'Неожиданный сбой в работе бота: {e}')
             check_tokens()
-            #bot = Bot(token=TELEGRAM_TOKEN)
+            try:
+                bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
+            except Exception as e:
+                logger.critical(f'Ошибка при перезапуске бота: {e}')
+                sys.exit('Программа принудительно остановлена.')
             continue
         finally:
             time.sleep(RETRY_PERIOD)
