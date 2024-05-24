@@ -1,5 +1,4 @@
 import json
-import locale
 import os
 import sys
 import time
@@ -26,7 +25,7 @@ logging.getLogger('requests').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('telegram.bot').setLevel(logging.WARNING)
 
-locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
+# locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
 load_dotenv(override=True)
 
