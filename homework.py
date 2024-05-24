@@ -48,21 +48,23 @@ HOMEWORK_VERDICTS = {
 }
 
 
-def check_tokens() -> None:
+def check_tokens() -> list:
     """Проверяем наличие токенов."""
+    error_messages = []
     for token_name, token_value in {
         'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }.items():
         if token_value is None:
-            logger.critical(f'Ошибка доступа к токену {token_name}.')
-            sys.exit('Программа принудительно остановлена.')
+            error_messages.append(f'Ошибка доступа к токену {token_name}.')
+    return error_messages
 
 
 def get_api_answer(timestamp: int) -> dict:
     """Получаем ответ от API сервиса Практикум.Домашка."""
     PAYLOAD['from_date'] = timestamp
+    logger.debug(f'Отправка запроса к API. timestamp = {timestamp}.')
     try:
         response = requests.get(
             ENDPOINT,
@@ -86,69 +88,50 @@ def get_api_answer(timestamp: int) -> dict:
 
 def check_response(response: dict) -> None:
     """Проверяем валидность формата ответа API."""
-    try:
-        if not response:
-            raise KeyError('не получен объект response.')
-        if not isinstance(response, dict):
-            raise ValueError(
-                f'получен объект {type(response).__name__} типа '
-                'вместо ожидаемого типа dict.'
-            )
-        if 'homeworks' not in response:
-            raise KeyError('ключ homeworks не найден.')
-        if not isinstance(response.get('homeworks'), list):
-            raise ValueError('значение по ключу homeworks не типа list.')
-        if 'current_date' not in response:
-            raise KeyError('ключ current_date не найден.')
-        if not isinstance(response.get('current_date'), int):
-            raise TypeError('значение по ключу current_date не типа int.')
-        return response.get('homeworks')
-    except (KeyError, TypeError) as e:
-        raise APIException(
-            message=f'Ошибка при проверке формата ответа API: {e}',
+    if not response:
+        raise KeyError('не получен объект response.')
+    if not isinstance(response, dict):
+        raise TypeError(
+            f'получен объект {type(response).__name__} типа '
+            'вместо ожидаемого типа dict.'
         )
-    except ValueError as e:
-        raise TypeError(str(e))
+    if 'homeworks' not in response:
+        raise KeyError('ключ homeworks не найден.')
+    if not isinstance(response.get('homeworks'), list):
+        raise TypeError('значение по ключу homeworks не типа list.')
+    if 'current_date' not in response:
+        raise KeyError('ключ current_date не найден.')
+    if not isinstance(response.get('current_date'), int):
+        raise TypeError('значение по ключу current_date не типа int.')
+    return response.get('homeworks')
 
 
 def parse_status(homework: dict) -> str:
     """Возвращаем статус домашней работы и инфо о ней."""
-    try:
-        '''
-        if 'lesson_name' not in homework:
-            raise KeyError('не найден ключ lessons_name.')
-        homework_name = homework.get('lesson_name')
-        if not isinstance(homework_name, str):
-            raise TypeError('lessons_name не ожидаемого str типа.')
-        '''
-        if 'homework_name' not in homework:
-            raise KeyError('не найден ключ homework_name.')
-        homework_name = homework.get('homework_name')
-        if not isinstance(homework_name, str):
-            raise TypeError('homework_name не ожидаемого str типа.')
-        if 'status' not in homework:
-            raise KeyError('не найден ключ status.')
-        status = homework.get('status')
-        if not isinstance(status, str):
-            raise TypeError('status не ожидаемого str типа.')
-        if status not in HOMEWORK_VERDICTS:
-            raise KeyError(f'неизвестный статус домашней работы: {status}.')
+    if 'homework_name' not in homework:
+        raise KeyError('не найден ключ homework_name.')
+    homework_name = homework.get('homework_name')
+    if not isinstance(homework_name, str):
+        raise TypeError('homework_name не ожидаемого str типа.')
+    if 'status' not in homework:
+        raise KeyError('не найден ключ status.')
+    status = homework.get('status')
+    if not isinstance(status, str):
+        raise TypeError('status не ожидаемого str типа.')
+    if status not in HOMEWORK_VERDICTS:
+        raise KeyError(f'неизвестный статус домашней работы: {status}.')
 
-        message = (
-            f'Изменился статус проверки работы "{homework_name}". '
-            f'{HOMEWORK_VERDICTS.get(status)}'
-        )
-        return message
-
-    except (KeyError, TypeError) as e:
-        raise APIException(
-            message=f'Ошибка при получении инфо о домашней работе: {e}.',
-        )
+    message = (
+        f'Изменился статус проверки работы "{homework_name}". '
+        f'{HOMEWORK_VERDICTS.get(status)}'
+    )
+    return message
 
 
 def send_message(bot: Bot, message: str) -> None:
     """Отправляем сообщение в чат."""
     try:
+        logger.debug(f'Начало отправки сообщения: {message}.')
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except TelegramError as e:
         logger.error(f'Ошибка при отправке сообщения: {e}.')
@@ -158,7 +141,10 @@ def send_message(bot: Bot, message: str) -> None:
 
 def main():
     """Основная логика работы бота."""
-    check_tokens()
+    token_errors = check_tokens()
+    if token_errors:
+        logger.critical('\n'.join(token_errors))
+        sys.exit('Программа принудительно остановлена.')
     bot = Bot(token=TELEGRAM_TOKEN)
 
     timestamp = 0
@@ -168,39 +154,27 @@ def main():
         try:
             new_verdict = None
             api_answer = get_api_answer(timestamp)
-            logger.debug(f'Получен ответ от API на момент {timestamp}.')
             check_response(api_answer)
             logger.debug('Проверка валидности формата ответа API пройдена.')
             homeworks = api_answer.get('homeworks')
             if homeworks:
-                logger.debug('Получены обновления.')
                 new_verdict = parse_status(homeworks[0])
-                logger.debug('Обновления распарсены.')
                 if new_verdict != prev_verdict:
                     send_message(bot, new_verdict)
-                    logger.debug('Полученный вердикт отправлен.')
                     prev_verdict = new_verdict
-                    logger.debug('Новый вердикт перезаписан вместо старого.')
                     timestamp = api_answer.get('current_date', timestamp)
-                    logger.debug('Обновлена точка отсчета для обновлений.')
                 else:
                     logger.warning('Новый вердикт идентичен предыдущему.')
             else:
                 logger.debug('Обновлений нет.')
-        except TypeError as e:
-            logger.error(f'Ошибка при проверке формата ответа API: {e}')
+        except (KeyError, TypeError) as e:
+            logger.error(f'Ошибка при проверке ответа API: {e}')
             continue
         except APIException as e:
             logger.error(e)
             continue
         except Exception as e:
             logger.error(f'Сбой в работе бота: {e}')
-            check_tokens()
-            try:
-                bot = Bot(token=TELEGRAM_TOKEN)
-            except Exception as e:
-                logger.critical(f'Ошибка при перезапуске бота: {e}')
-                sys.exit('Программа принудительно остановлена.')
             continue
         finally:
             time.sleep(RETRY_PERIOD)
