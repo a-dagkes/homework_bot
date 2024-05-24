@@ -7,9 +7,8 @@ from http import HTTPStatus
 import logging
 
 import requests
-import telebot
 from dotenv import load_dotenv
-from telegram import TelegramError
+from telegram import Bot, TelegramError
 
 from exceptions import APIException
 
@@ -113,7 +112,7 @@ def check_response(response: dict) -> None:
         raise TypeError(str(e))
 
 
-def parse_status(homework) -> str:
+def parse_status(homework: dict) -> str:
     """Возвращаем статус домашней работы и инфо о ней."""
     try:
         '''
@@ -148,7 +147,7 @@ def parse_status(homework) -> str:
         )
 
 
-def send_message(bot, message: str) -> None:
+def send_message(bot: Bot, message: str) -> None:
     """Отправляем сообщение в чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
@@ -161,7 +160,7 @@ def send_message(bot, message: str) -> None:
 def main():
     """Основная логика работы бота."""
     check_tokens()
-    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)  # bot = Bot(token=...)
+    bot = Bot(token=TELEGRAM_TOKEN)
 
     timestamp = 0
     prev_verdict = ''
@@ -199,7 +198,7 @@ def main():
             logger.error(f'Сбой в работе бота: {e}')
             check_tokens()
             try:
-                bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
+                bot = Bot(token=TELEGRAM_TOKEN)
             except Exception as e:
                 logger.critical(f'Ошибка при перезапуске бота: {e}')
                 sys.exit('Программа принудительно остановлена.')
