@@ -4,12 +4,13 @@ import os
 import sys
 import time
 from http import HTTPStatus
+import logging
 
 import requests
 import telebot
-import logging
 from dotenv import load_dotenv
-from telegram import Bot, TelegramError
+from telegram import TelegramError
+
 from exceptions import APIException
 
 logging.basicConfig(
@@ -54,7 +55,7 @@ def check_tokens() -> None:
     for token_name, token_value in {
         'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
-        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }.items():
         if token_value is None:
             logger.critical(f'Ошибка доступа к токену {token_name}.')
@@ -91,14 +92,14 @@ def check_response(response: dict) -> None:
         if not response:
             raise KeyError('не получен объект response.')
         if not isinstance(response, dict):
-            raise TypeError(
+            raise ValueError(
                 f'получен объект {type(response).__name__} типа '
                 'вместо ожидаемого типа dict.'
             )
         if 'homeworks' not in response:
             raise KeyError('ключ homeworks не найден.')
         if not isinstance(response.get('homeworks'), list):
-            raise TypeError('значение по ключу homeworks не типа list.')
+            raise ValueError('значение по ключу homeworks не типа list.')
         if 'current_date' not in response:
             raise KeyError('ключ current_date не найден.')
         if not isinstance(response.get('current_date'), int):
@@ -108,6 +109,8 @@ def check_response(response: dict) -> None:
         raise APIException(
             message=f'Ошибка при проверке формата ответа API: {e}',
         )
+    except ValueError as e:
+        raise TypeError(str(e))
 
 
 def parse_status(homework) -> str:
@@ -131,7 +134,7 @@ def parse_status(homework) -> str:
         if not isinstance(status, str):
             raise TypeError('status не ожидаемого str типа.')
         if status not in HOMEWORK_VERDICTS:
-            raise KeyError(f'Неизвестный статус домашней работы: {status}.')
+            raise KeyError(f'неизвестный статус домашней работы: {status}.')
 
         message = (
             f'Изменился статус проверки работы "{homework_name}". '
@@ -145,7 +148,7 @@ def parse_status(homework) -> str:
         )
 
 
-def send_message(bot: Bot, message: str) -> None:
+def send_message(bot, message: str) -> None:
     """Отправляем сообщение в чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
@@ -158,8 +161,7 @@ def send_message(bot: Bot, message: str) -> None:
 def main():
     """Основная логика работы бота."""
     check_tokens()
-    #bot = Bot(token=TELEGRAM_TOKEN)
-    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
+    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)  # bot = Bot(token=...)
 
     timestamp = 0
     prev_verdict = ''
@@ -187,11 +189,14 @@ def main():
                     logger.warning('Новый вердикт идентичен предыдущему.')
             else:
                 logger.debug('Обновлений нет.')
+        except TypeError as e:
+            logger.error(f'Ошибка при проверке формата ответа API: {e}')
+            continue
         except APIException as e:
             logger.error(e)
             continue
         except Exception as e:
-            logger.error(f'Неожиданный сбой в работе бота: {e}')
+            logger.error(f'Сбой в работе бота: {e}')
             check_tokens()
             try:
                 bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
