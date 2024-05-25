@@ -88,8 +88,6 @@ def get_api_answer(timestamp: int) -> dict:
 
 def check_response(response: dict) -> None:
     """Проверяем валидность формата ответа API."""
-    if not response:
-        raise KeyError('не получен объект response.')
     if not isinstance(response, dict):
         raise TypeError(
             f'получен объект {type(response).__name__} типа '
@@ -97,35 +95,33 @@ def check_response(response: dict) -> None:
         )
     if 'homeworks' not in response:
         raise KeyError('ключ homeworks не найден.')
-    if not isinstance(response.get('homeworks'), list):
+    homeworks = response['homeworks']
+    if not isinstance(homeworks, list):
         raise TypeError('значение по ключу homeworks не типа list.')
     if 'current_date' not in response:
         raise KeyError('ключ current_date не найден.')
-    if not isinstance(response.get('current_date'), int):
+    if not isinstance(response['current_date'], int):
         raise TypeError('значение по ключу current_date не типа int.')
-    return response.get('homeworks')
+    return homeworks
 
 
 def parse_status(homework: dict) -> str:
     """Возвращаем статус домашней работы и инфо о ней."""
     if 'homework_name' not in homework:
         raise KeyError('не найден ключ homework_name.')
-    homework_name = homework.get('homework_name')
+    homework_name = homework['homework_name']
     if not isinstance(homework_name, str):
         raise TypeError('homework_name не ожидаемого str типа.')
     if 'status' not in homework:
         raise KeyError('не найден ключ status.')
-    status = homework.get('status')
-    if not isinstance(status, str):
-        raise TypeError('status не ожидаемого str типа.')
+    status = homework['status']
     if status not in HOMEWORK_VERDICTS:
         raise KeyError(f'неизвестный статус домашней работы: {status}.')
 
-    message = (
+    return (
         f'Изменился статус проверки работы "{homework_name}". '
         f'{HOMEWORK_VERDICTS.get(status)}'
     )
-    return message
 
 
 def send_message(bot: Bot, message: str) -> None:
@@ -169,13 +165,10 @@ def main():
                 logger.debug('Обновлений нет.')
         except (KeyError, TypeError) as e:
             logger.error(f'Ошибка при проверке ответа API: {e}')
-            continue
         except APIException as e:
             logger.error(e)
-            continue
         except Exception as e:
             logger.error(f'Сбой в работе бота: {e}')
-            continue
         finally:
             time.sleep(RETRY_PERIOD)
             logger.debug(f'Бот уснул на {RETRY_PERIOD} секунд.')
